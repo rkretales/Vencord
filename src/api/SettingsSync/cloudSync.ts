@@ -11,7 +11,7 @@ import { Logger } from "@utils/Logger";
 import { relaunch } from "@utils/native";
 import { deflateSync, inflateSync } from "fflate";
 
-import { checkCloudUrlCsp, deauthorizeCloud, getCloudAuth, getCloudUrl } from "./cloudSetup";
+import { checkCloudUrlCsp, cloudFetch, deauthorizeCloud, getCloudAuth, getCloudUrl, SETTINGS_TIMEOUT_MS } from "./cloudSetup";
 import { exportSettings, importSettings } from "./offline";
 
 const logger = new Logger("SettingsSync:Cloud", "#39b7e0");
@@ -36,14 +36,14 @@ export async function putCloudSettings(manual?: boolean) {
     if (!await checkCloudUrlCsp()) return;
 
     try {
-        const res = await fetch(new URL("/v1/settings", getCloudUrl()), {
+        const res = await cloudFetch(new URL("/v1/settings", getCloudUrl()), {
             method: "PUT",
             headers: {
                 Authorization: await getCloudAuth(),
                 "Content-Type": "application/octet-stream"
             },
             body: deflateSync(new TextEncoder().encode(settings)) as Uint8Array<ArrayBuffer>
-        });
+        }, SETTINGS_TIMEOUT_MS);
 
         if (!res.ok) {
             logger.error(`Failed to sync up, API returned ${res.status}`);
@@ -84,14 +84,14 @@ export async function getCloudSettings(shouldNotify = true, force = false) {
     if (!await checkCloudUrlCsp()) return;
 
     try {
-        const res = await fetch(new URL("/v1/settings", getCloudUrl()), {
+        const res = await cloudFetch(new URL("/v1/settings", getCloudUrl()), {
             method: "GET",
             headers: {
                 Authorization: await getCloudAuth(),
                 Accept: "application/octet-stream",
                 "If-None-Match": Settings.cloud.settingsSyncVersion.toString()
             },
-        });
+        }, SETTINGS_TIMEOUT_MS);
 
         if (res.status === 404) {
             logger.info("No settings on the cloud");
@@ -177,10 +177,10 @@ export async function deleteCloudSettings() {
     if (!await checkCloudUrlCsp()) return;
 
     try {
-        const res = await fetch(new URL("/v1/settings", getCloudUrl()), {
+        const res = await cloudFetch(new URL("/v1/settings", getCloudUrl()), {
             method: "DELETE",
             headers: { Authorization: await getCloudAuth() },
-        });
+        }, SETTINGS_TIMEOUT_MS);
 
         if (!res.ok) {
             logger.error(`Failed to delete, API returned ${res.status}`);
@@ -211,10 +211,10 @@ export async function deleteCloudSettings() {
 export async function eraseAllCloudData() {
     if (!await checkCloudUrlCsp()) return;
 
-    const res = await fetch(new URL("/v1/", getCloudUrl()), {
+    const res = await cloudFetch(new URL("/v1/", getCloudUrl()), {
         method: "DELETE",
         headers: { Authorization: await getCloudAuth() }
-    });
+    }, SETTINGS_TIMEOUT_MS);
 
     if (!res.ok) {
         logger.error(`Failed to erase data, API returned ${res.status}`);

@@ -16,6 +16,18 @@ export const logger = new Logger("SettingsSync:CloudSetup", "#39b7e0");
 export const getCloudUrl = () => new URL(Settings.cloud.url);
 const getCloudUrlOrigin = () => getCloudUrl().origin;
 
+export const SETTINGS_TIMEOUT_MS = 60_000;
+const OAUTH_TIMEOUT_MS = 30_000;
+
+/**
+ * Fetches from the cloud without cookies, refusing redirects so the Authorization header
+ * never follows a hop off the configured origin, and giving up after `timeout` ms.
+ * Goes through the page's fetch so plugin layers (settings encryption) still apply.
+ */
+export function cloudFetch(url: URL | string, init: RequestInit, timeout: number) {
+    return fetch(url, { ...init, credentials: "omit", redirect: "error", signal: AbortSignal.timeout(timeout) });
+}
+
 export async function checkCloudUrlCsp() {
     if (IS_WEB) return true;
 
@@ -96,7 +108,8 @@ export async function authorizeCloud() {
     if (!await checkCloudUrlCsp()) return;
 
     try {
-        const oauthConfiguration = await fetch(new URL("/v1/oauth/settings", getCloudUrl()));
+        const oauthConfiguration = await cloudFetch(new URL("/v1/oauth/settings", getCloudUrl()), {}, OAUTH_TIMEOUT_MS);
+        if (!oauthConfiguration.ok) throw new Error(`API returned ${oauthConfiguration.status}`);
         var { clientId, redirectUri } = await oauthConfiguration.json();
     } catch {
         showNotification({
@@ -122,9 +135,10 @@ export async function authorizeCloud() {
             }
 
             try {
-                const res = await fetch(location, {
+                const res = await cloudFetch(location, {
                     headers: { Accept: "application/json" }
-                });
+                }, OAUTH_TIMEOUT_MS);
+                if (!res.ok) throw new Error(`API returned ${res.status}`);
                 const { secret } = await res.json();
                 if (secret) {
                     logger.info("Authorized with secret");
